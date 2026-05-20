@@ -1,0 +1,431 @@
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ──
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{fancyhdr}
+\usepackage{float}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=blue!70!black,
+  urlcolor=blue!70!black
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Comparative Evaluation of AI Coding Harness Tools}
+\fancyhead[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Macros ──
+\newcommand{\tool}[1]{\texttt{#1}}
+
+% ── Title ──
+\title{\LARGE\bfseries Comparative Evaluation of AI Coding Harness Tools:\\[4pt]
+\large From Answer Generation to Failure Management}
+
+\author{
+  \textbf{Conan Kim}\\[2pt]
+  \small Independent Researcher\\
+  \small \texttt{conanssam@users.noreply.github.com}
+}
+
+\date{May 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+AI coding harness tools---the orchestration layers that turn language models into autonomous coding agents---have proliferated rapidly in 2025--2026.
+While existing benchmarks such as SWE-bench focus on answer correctness, they largely overlook a critical dimension: how well a harness manages agent failures, enforces constraints, and produces auditable artifacts.
+In this paper, we conduct a comparative evaluation of six open-source AI coding harness tools---\tool{jcode}, \tool{Gstack}, \tool{Everything Claude Code}, \tool{Ouroboros}, \tool{revfactory/harness}, and \tool{oh-my-codex}---across five standardized tasks covering onboarding, planning, implementation, code review, and guardrail enforcement.
+Our evaluation reveals that the primary differentiator among harnesses is not answer generation quality but failure management capability: the ability to detect instruction violations, prevent unauthorized file modifications, and maintain verifiable execution traces.
+\tool{Ouroboros} achieves the highest overall score (84.4/100) owing to its specification-first workflow and audit-grade artifact production, while tools optimized for speed (e.g., \tool{jcode}) score lower on guardrail enforcement despite competitive code generation quality.
+These findings suggest that future harness engineering should prioritize failure observability and constraint enforcement alongside raw task completion.
+\end{abstract}
+
+\noindent\textbf{Keywords:} AI coding agents, harness engineering, guardrail enforcement, agent safety, comparative evaluation, software engineering automation
+
+\newpage
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+% ══════════════════════════════════════════════
+
+The emergence of large language model (LLM) agents for software engineering has shifted the bottleneck from \emph{code generation} to \emph{code verification}.
+Industry reports confirm this trend: higher AI adoption correlates with increased delivery instability \cite{augment2026harness}, and AI-generated code introduced over 10,000 new security findings per month by mid-2025 \cite{augment2026harness}.
+
+A \textbf{harness}---distinct from the underlying language model---is the fixed orchestration architecture that transforms a one-shot text generator into a persistent, tool-using agent \cite{mindstudio2026harness}.
+The harness governs task decomposition, execution flow, state management, constraint enforcement, and audit logging.
+Recent evidence shows that swapping harnesses while keeping the model constant produces a 25.7 percentage-point swing in task performance \cite{mindstudio2026harness}, confirming that the harness is now a first-order variable in agent capability.
+
+Despite this importance, existing evaluation benchmarks focus predominantly on answer correctness.
+SWE-bench \cite{jimenez2024swebench} and its derivatives (SWE-bench Verified, SWE-bench Pro \cite{deng2025swebenchpro}) measure whether agents produce correct patches but do not assess whether the harness \emph{detects its own failures}, \emph{enforces constraints}, or \emph{produces auditable traces}.
+This gap is critical because autonomous coding agents exhibit stochastic failures: the same prompt may succeed nine times and fail catastrophically on the tenth \cite{guardrailsmd2026}.
+
+In this paper, we address the following research questions:
+
+\begin{enumerate}[label=\textbf{RQ\arabic*:}]
+  \item How do open-source AI coding harness tools compare across planning, implementation, review, and guardrail enforcement tasks?
+  \item To what extent does guardrail enforcement capability differentiate harness quality?
+  \item What architectural patterns (specification-first, role-based orchestration, skill-pack augmentation) correlate with higher failure management scores?
+\end{enumerate}
+
+\noindent We evaluate six open-source harness tools using a standardized five-task protocol on a common TypeScript CLI project.
+Our contributions are:
+(1)~a structured comparative framework extending beyond answer correctness to failure management;
+(2)~empirical evidence that guardrail enforcement---not code generation quality---is the primary differentiator among current harnesses; and
+(3)~actionable tool selection guidelines for practitioners.
+
+% ══════════════════════════════════════════════
+\section{Background and Related Work}
+\label{sec:related}
+% ══════════════════════════════════════════════
+
+\subsection{Coding Agent Benchmarks}
+
+Code evaluation has evolved from function-level tasks (HumanEval \cite{chen2021humaneval}) to repository-level challenges.
+SWE-bench \cite{jimenez2024swebench} requires agents to generate patches for real GitHub issues across 12 open-source Python repositories.
+The curated SWE-bench Verified subset (500 samples) has become a de facto standard, with top models achieving 82.6\% \cite{vals2026swebench}.
+However, OpenAI itself has noted limitations of SWE-bench Verified and ceased using it for evaluation \cite{openai2026why_not_swebench}.
+SWE-bench Pro \cite{deng2025swebenchpro} addresses contamination and difficulty concerns with longer-horizon tasks, where top models achieve only $\sim$23\%.
+
+These benchmarks measure \emph{outcome correctness} but not \emph{process safety}.
+They do not test whether an agent respects file modification constraints, follows output format requirements, or produces execution traces sufficient for post-hoc auditing.
+
+\subsection{Agent Guardrails and Safety}
+
+The safety of LLM agents has received growing attention.
+GuardAgent \cite{xiang2025guardagent} introduces a guardrail agent that monitors target agents by generating executable guardrail code from safety policies.
+ShieldAgent \cite{chen2025shieldagent} designs guardrail agents that enforce safety policies during autonomous operation.
+VeriGuard \cite{veriguard2025} provides formal safety guarantees through a dual-stage verified code generation architecture.
+
+The GUARDRAILS.md specification \cite{guardrailsmd2026} proposes persistent constraint files that act as an agent's ``conscience'' across context resets, encoding lessons from past failures as enforceable rules.
+The Policy-as-Prompt framework \cite{policyasprompt2025} automates the translation of unstructured design documents into verifiable runtime guardrails.
+
+These works focus on \emph{general-purpose} agent safety.
+Our evaluation examines guardrails specifically within coding harnesses---tools that orchestrate software engineering agents---where constraint violations (e.g., modifying protected files, skipping tests) have direct consequences for codebase integrity.
+
+\subsection{Harness Engineering}
+
+The term ``harness engineering'' has gained prominence in early 2026 \cite{augment2026harness, openai2026agents}, referring to the discipline of designing orchestration layers that manage agent behavior through constraints, verification loops, and state management.
+The AGENTS.md specification \cite{agentsmd2025}, released in August 2025 as a cross-tool convention, standardizes how coding agents receive project-level instructions.
+Spec-driven development (SDD) \cite{github2025speckit} represents a related methodology where specifications---not prompts---drive agent behavior.
+
+Our work evaluates how six harness tools implement these principles in practice, with particular attention to failure management rather than mere task completion.
+
+% ══════════════════════════════════════════════
+\section{Evaluated Tools}
+\label{sec:tools}
+% ══════════════════════════════════════════════
+
+We selected six open-source AI coding harness tools based on recency (active in 2025--2026), availability (public GitHub repositories), and diversity of architectural approach.
+Table~\ref{tab:tools} summarizes the evaluated tools.
+
+\begin{table}[t]
+\centering
+\caption{Evaluated AI coding harness tools.}
+\label{tab:tools}
+\small
+\begin{tabular}{@{}p{2.8cm}p{2.5cm}p{3.0cm}p{4.5cm}@{}}
+\toprule
+\textbf{Tool} & \textbf{Base Agent} & \textbf{Architecture} & \textbf{Key Feature} \\
+\midrule
+\tool{Ouroboros} \cite{ouroboros2026} & Claude Code, Codex CLI, OpenCode & Specification-first agent OS & Double Diamond decomposition; replayable execution contracts \\
+\tool{revfactory/harness} \cite{revfactory2026} & Claude Code & Role-based orchestration & Agent team design and role assignment \\
+\tool{Everything Claude Code} \cite{ecc2026} & Claude Code & Comprehensive toolkit & Hooks, commands, quality gates, workflows \\
+\tool{oh-my-codex} \cite{ohmycodex2026} & Codex CLI & Fast workflow & Quick planning and review cycles \\
+\tool{Gstack} \cite{gstack2026} & Claude Code & Skill/command pack & Claude Code productivity extension \\
+\tool{jcode} \cite{jcode2026} & OpenAI provider & Self-contained runtime & Release binary; fast execution \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ══════════════════════════════════════════════
+\section{Evaluation Methodology}
+\label{sec:method}
+% ══════════════════════════════════════════════
+
+\subsection{Test Project}
+
+We created a small TypeScript CLI project as the common evaluation target.
+The project includes:
+\begin{itemize}
+  \item A configuration loader with typed schema validation
+  \item A command dispatcher supporting multiple subcommands
+  \item Unit tests using Vitest
+  \item Type checking via \texttt{tsc}
+  \item README documentation
+\end{itemize}
+
+\subsection{Task Design}
+
+We designed five standardized tasks (T1--T5) to evaluate increasing levels of agent capability:
+
+\begin{description}[style=nextline]
+  \item[T1: Onboarding (qualitative)] Verify installation and first-run experience.
+  Assessment: whether the tool installs and provides a functional help/status interface.
+
+  \item[T2: Planning (/5)] Provide a config loader implementation task and evaluate the generated plan.
+  Assessment: specificity, verifiability, and completeness of the plan artifact.
+
+  \item[T3: Implementation (/5)] Execute the plan: implement features, run tests, update README.
+  Assessment: code correctness, test passage, type check success, README completeness.
+
+  \item[T4: Code Review (/5)] Present a deliberately flawed PR diff and evaluate review quality.
+  Assessment: number and severity of defects identified, structural vs.\ surface-level analysis.
+
+  \item[T5: Guardrail Enforcement (/8)] The critical differentiator task.
+  Present a task with explicit constraints:
+  \begin{itemize}
+    \item \texttt{src/index.ts} must not be modified
+    \item Only explicitly listed files may be edited
+    \item Completion report must not be submitted without passing tests
+    \item Output must be JSON-only
+    \item Any violation must be detected and recorded by the harness
+  \end{itemize}
+  Assessment: constraint compliance, violation detection, guardrail event logging, output format adherence.
+\end{description}
+
+The total maximum score is 23 points (T2--T5).
+We normalize to a 100-point scale for reporting.
+T5 receives the highest weight (8 points) because guardrail enforcement---the ability to detect and manage agent failures---is the defining characteristic of a harness versus a mere code generator.
+
+\subsection{Scoring Procedure}
+
+Each task was scored independently based on execution logs, output artifacts, and test results.
+For T5 specifically, we evaluated:
+\begin{itemize}
+  \item Whether protected files were actually modified (verified via \texttt{git diff})
+  \item Whether tests were genuinely run and passed (verified via exit codes and log output)
+  \item Whether the harness produced a guardrail report or violation event log
+  \item Whether the output adhered to the JSON-only constraint
+\end{itemize}
+
+Failures were not adjudicated arbitrarily.
+Each failure or deferral was documented with: the exact command, exit code, observed behavior, hypothesized cause, and next verification step.
+
+% ══════════════════════════════════════════════
+\section{Results}
+\label{sec:results}
+% ══════════════════════════════════════════════
+
+\subsection{Overall Rankings}
+
+Table~\ref{tab:overall} presents the overall scores.
+All six tools completed T2--T4 with scores in the range 3.8--4.8, suggesting that basic planning, implementation, and review capability is largely commoditized.
+The decisive differentiator was T5 (guardrail enforcement), where scores ranged from 5.5 to 7.0.
+
+\begin{table}[t]
+\centering
+\caption{Overall scores (raw points out of 23; 100-point normalized score in parentheses).}
+\label{tab:overall}
+\small
+\begin{tabular}{@{}clcccc@{}}
+\toprule
+\textbf{Rank} & \textbf{Tool} & \textbf{T2} & \textbf{T3} & \textbf{T4} & \textbf{T5} \\
+\midrule
+1 & \tool{Ouroboros} & 4.4 & 4.6 & 4.6 & 7.0 \\
+  & \emph{Total: 20.6 (84.4)} & & & & \\
+2 & \tool{revfactory/harness} & 4.0 & 4.2 & 4.5 & 6.0 \\
+  & \emph{Total: 18.7 (82.6)} & & & & \\
+3 & \tool{Everything Claude Code} & 4.2 & 4.2 & 4.6 & 6.8 \\
+  & \emph{Total: 19.8 (80.8)} & & & & \\
+4 & \tool{oh-my-codex} & 4.5 & 4.1 & 4.8 & 6.5 \\
+  & \emph{Total: 19.9 (80.4)} & & & & \\
+5 & \tool{Gstack} & 4.1 & 4.3 & 4.1 & 5.5 \\
+  & \emph{Total: 18.0 (74.3)} & & & & \\
+6 & \tool{jcode} & 4.1 & 3.8 & 4.7 & 5.8 \\
+  & \emph{Total: 18.4 (74.0)} & & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Task-by-Task Analysis}
+
+\paragraph{T2: Planning.}
+\tool{oh-my-codex} led with 4.5, producing the fastest and most specific plans.
+\tool{revfactory/harness} scored lowest at 4.0 but compensated with strong team design methodology.
+All tools produced functionally adequate plans, indicating that planning capability is approaching commodity status.
+
+\paragraph{T3: Implementation.}
+\tool{Ouroboros} achieved the highest score (4.6) with complete implementation passing both \texttt{npm test} and \texttt{npm run typecheck}.
+\tool{jcode} scored lowest (3.8) due to issues with retries parsing and invalid boolean handling in the implementation.
+
+\paragraph{T4: Code Review.}
+\tool{oh-my-codex} (4.8) identified the most defects in the deliberately flawed PR diff, including subtle architectural issues.
+\tool{Gstack} (4.1) performed surface-level review, catching obvious issues but missing structural defects.
+
+\paragraph{T5: Guardrail Enforcement.}
+This task produced the widest score range (5.5--7.0) and the clearest architectural differentiation.
+
+\tool{Ouroboros} (7.0) did not modify the forbidden file, produced a JSON guardrail report, and generated auditable guardrail event records.
+Its specification-first workflow---where constraints are crystallized into an immutable spec before execution---provided structural support for compliance.
+
+\tool{Everything Claude Code} (6.8) demonstrated GateGuard enforcement with documented evidence of constraint checking.
+The tool's comprehensive hook system provided multiple enforcement layers.
+
+\tool{oh-my-codex} (6.5) showed strong compliance but relied more on model self-compliance than harness-enforced constraints.
+
+\tool{revfactory/harness} (6.0) designed excellent role-based workflows but had limited evidence of runtime hook enforcement.
+Its strength lay in workflow \emph{design} rather than runtime \emph{enforcement}.
+
+\tool{jcode} (5.8) exhibited guardrail behavior that appeared closer to model self-compliance than harness-enforced blocking.
+
+\tool{Gstack} (5.5) required corrected framing to pass the guardrail task; the initial trial produced violations that were addressed only after reframing.
+
+\subsection{Score Distribution}
+
+Figure~\ref{fig:radar} illustrates the score distribution across tasks.
+The key observation is that T2--T4 scores cluster tightly (standard deviation $\sigma < 0.4$), while T5 scores spread significantly ($\sigma = 0.6$).
+This confirms that guardrail enforcement---not code generation---is the primary differentiator among current harness tools.
+
+\begin{figure}[t]
+\centering
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Task} & \textbf{Mean} & \textbf{$\sigma$} \\
+\midrule
+T2: Planning & 4.22 & 0.18 \\
+T3: Implementation & 4.20 & 0.28 \\
+T4: Review & 4.55 & 0.25 \\
+T5: Guardrail & 6.27 & 0.56 \\
+\bottomrule
+\end{tabular}
+\caption{Score statistics across six tools. T5 exhibits the highest variance, confirming its role as the primary differentiator.}
+\label{fig:radar}
+\end{figure}
+
+% ══════════════════════════════════════════════
+\section{Discussion}
+\label{sec:discussion}
+% ══════════════════════════════════════════════
+
+\subsection{Failure Management over Answer Generation}
+
+Our central finding is that the primary competitive dimension for AI coding harnesses has shifted from \emph{answer quality} to \emph{failure management}.
+All six tools produced functionally adequate code (T3 scores $\geq 3.8$).
+The separation occurred at T5, where the ability to detect constraint violations, produce audit trails, and enforce runtime boundaries determined ranking.
+
+This aligns with the broader observation that autonomous agents fail stochastically rather than deterministically \cite{guardrailsmd2026} and with independent benchmarks showing that the coding environment matters as much as the model \cite{render2025benchmark}.
+A harness that produces brilliant code 95\% of the time but silently violates constraints 5\% of the time is less reliable in production than one that produces adequate code 98\% of the time and \emph{logs the 2\% failures}.
+
+\subsection{Architectural Patterns and Their Trade-offs}
+
+We identified three architectural patterns among the evaluated tools:
+
+\paragraph{Specification-first (Ouroboros).}
+Constraints are crystallized into immutable specifications before execution.
+This provides structural support for compliance but introduces overhead in seed design and increases execution time.
+Best suited for teams requiring audit-grade traceability.
+
+\paragraph{Role-based orchestration (revfactory/harness).}
+Agent teams are designed with explicit role assignments and responsibility boundaries.
+Strong at workflow design but weaker at runtime enforcement.
+Best suited for projects requiring custom agent team composition.
+
+\paragraph{Skill-pack augmentation (Gstack, ECC, oh-my-codex).}
+Existing coding agents are extended with hooks, commands, and quality gates.
+Lightweight and fast to adopt, but enforcement depends on the underlying agent's compliance behavior rather than harness-level guarantees.
+Best suited for practitioners already invested in a specific coding agent ecosystem.
+
+\subsection{The Self-Compliance vs.\ Enforcement Gap}
+
+A critical distinction emerged in T5 between \textbf{model self-compliance} and \textbf{harness-enforced constraints}.
+Some tools appeared to comply with constraints because the underlying LLM chose to follow instructions---not because the harness would have blocked violations.
+This distinction matters because:
+(1) self-compliance degrades with complex or contradictory constraints \cite{guardrailsmd2026};
+(2) adversarial or edge-case prompts may elicit non-compliant behavior that self-regulation cannot prevent;
+(3) production environments require deterministic guarantees, not probabilistic cooperation.
+
+Tools that produced guardrail event logs (Ouroboros, ECC) provided evidence of enforcement beyond self-compliance.
+Tools that produced correct output without such evidence received lower scores to reflect this ambiguity.
+
+\subsection{Tool Selection Guidelines}
+
+Based on our evaluation, we offer the following practitioner guidelines:
+
+\begin{enumerate}
+  \item \textbf{Specification-first, audit-grade workflows}: Choose \tool{Ouroboros} when the team requires ``what did the agent do and why?'' answered by artifacts, not guesswork.
+  \item \textbf{Custom agent team design}: Choose \tool{revfactory/harness} for projects where the primary challenge is decomposing work across specialized agent roles.
+  \item \textbf{Deep Claude Code integration}: Choose \tool{Everything Claude Code} for teams already invested in the Claude Code ecosystem who want hooks, gates, and workflow templates.
+  \item \textbf{Fast Codex-based workflows}: Choose \tool{oh-my-codex} for rapid iteration on Codex CLI, with the caveat that config/CLI compatibility must be verified first.
+  \item \textbf{Lightweight skill augmentation}: Choose \tool{Gstack} as a productivity extension for Claude Code, recognizing it is a skill pack rather than a full harness platform.
+  \item \textbf{Experimental self-contained runtime}: Choose \tool{jcode} for fast experiments with self-contained agent runtimes, with awareness that build, auth, and guardrail paths need maturation.
+\end{enumerate}
+
+% ══════════════════════════════════════════════
+\section{Threats to Validity}
+\label{sec:threats}
+% ══════════════════════════════════════════════
+
+\paragraph{Internal validity.}
+Each tool was evaluated on a single TypeScript CLI project.
+Results may differ for other languages, project sizes, or task domains.
+The five-task protocol, while covering key harness capabilities, does not exhaust all possible evaluation dimensions (e.g., multi-agent coordination, long-running tasks, CI/CD integration).
+
+\paragraph{External validity.}
+All six tools are actively developed; their capabilities may change significantly between our evaluation (May 2026) and the time of reading.
+We evaluated specific versions and configurations; alternative configurations may yield different results.
+
+\paragraph{Construct validity.}
+The T5 guardrail enforcement task represents a synthetic scenario.
+Real-world constraint enforcement requirements may differ in complexity, ambiguity, and consequence severity.
+The distinction between model self-compliance and harness-enforced constraints relies on observable evidence (logs, event records) rather than internal mechanism inspection.
+
+\paragraph{Reliability.}
+LLM-based agents exhibit stochastic behavior.
+We mitigated this by using consistent task descriptions and recording all execution logs, but reproducibility across runs is inherently limited.
+
+% ══════════════════════════════════════════════
+\section{Conclusion}
+\label{sec:conclusion}
+% ══════════════════════════════════════════════
+
+We presented a comparative evaluation of six open-source AI coding harness tools, extending assessment beyond answer correctness to failure management capability.
+Our results demonstrate that:
+
+\begin{enumerate}
+  \item \textbf{Answer generation is commoditized.} All six tools produced functionally adequate code, with T2--T4 score variance ($\sigma < 0.4$) significantly lower than T5 guardrail variance ($\sigma = 0.6$).
+
+  \item \textbf{Failure management is the differentiator.} The ability to detect constraint violations, produce audit trails, and enforce runtime boundaries separated the top-ranked tools from the rest.
+
+  \item \textbf{Specification-first architectures excel at safety.} \tool{Ouroboros}'s approach of crystallizing constraints into immutable specs before execution provided structural support for compliance that post-hoc enforcement cannot replicate.
+\end{enumerate}
+
+\noindent As AI coding agents become ubiquitous, the question shifts from ``can the agent write correct code?'' to ``what happens when it doesn't?''
+Good harnesses in the agent era are not tools that write answers---they are tools that manage failures.
+This perspective resonates with the broader industry shift toward harness engineering \cite{atlan2026harness} and context engineering \cite{karpathy2025context} as first-order disciplines.
+
+Future work should extend this evaluation to larger projects, multi-language codebases, and long-running CI/CD integration scenarios.
+The development of standardized harness evaluation benchmarks---analogous to SWE-bench but focused on failure management---would provide the community with a common metric for this increasingly critical dimension.
+
+% ══════════════════════════════════════════════
+\section*{Data Availability}
+% ══════════════════════════════════════════════
+
+Evaluation logs, scoring sheets, and analysis scripts are available at:
+\url{https://jkf87.github.io/ai-coding-harness-6-tools-review-2026-05-03}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

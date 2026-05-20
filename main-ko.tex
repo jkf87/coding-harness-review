@@ -1,0 +1,339 @@
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ──
+\usepackage[utf8]{inputenc}
+\usepackage{xeCJK}
+\setCJKmainfont{Apple SD Gothic Neo}
+\usepackage{fontspec}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{fancyhdr}
+\usepackage{float}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=blue!70!black,
+  urlcolor=blue!70!black
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small AI 코딩 하네스 도구 비교 평가}
+\fancyhead[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Macros ──
+\newcommand{\tool}[1]{\texttt{#1}}
+
+% ── Title ──
+\title{\LARGE\bfseries AI 코딩 하네스 도구 비교 평가:\\[4pt]
+\large 정답 생성에서 실패 관리로}
+
+\author{
+  \textbf{김 콘} \\[2pt]
+  \small 독립 연구원 \\
+  \small \texttt{conanssam@users.noreply.github.com}
+}
+
+\date{2026년 5월}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+AI 코딩 하네스 도구---대규모 언어 모델을 자율 코딩 에이전트로 변환하는 오케스트레이션 계층---는 2025--2026년에 급속도로 증가했다.
+SWE-bench와 같은 기존 벤치마크가 정답 정확도에 초점을 맞추는 반면, 하네스가 에이전트 실패를 얼마나 잘 관리하고, 제약 조건을 강제하며, 감사 가능한 산출물을 생성하는지라는 중요한 차원은 대부분 간과하고 있다.
+본 논문에서는 6개의 오픈소스 AI 코딩 하네스 도구---\tool{jcode}, \tool{Gstack}, \tool{Everything Claude Code}, \tool{Ouroboros}, \tool{revfactory/harness}, \tool{oh-my-codex}---를 온보딩, 계획, 구현, 코드 리뷰, 가드레일 강제의 5개 표준화된 태스크로 비교 평가한다.
+평가 결과, 하네스 간의 주요 차별화 요소는 정답 생성 품질이 아니라 실패 관리 역량, 즉 지시 위반 감지, 무단 파일 수정 방지, 검증 가능한 실행 추적 유지 능력임이 밝혀졌다.
+\tool{Ouroboros}가 명세 우선 워크플로와 감사 등급 산출물 생성으로 인해 전체 최고 점수(84.4/100)를 기록했으며, 속도에 최적화된 도구들(예: \tool{jcode})은 가드레일 강제에서 낮은 점수를 받았음에도 경쟁력 있는 코드 생성 품질을 보였다.
+이러한 발견은 향후 하네스 엔지니어링이 단순한 태스크 완료와 함께 실패 관측 가능성과 제약 강제를 우선시해야 함을 시사한다.
+\end{abstract}
+
+\noindent\textbf{키워드:} AI 코딩 에이전트, 하네스 엔지니어링, 가드레일 강제, 에이전트 안전, 비교 평가, 소프트웨어 엔지니어링 자동화
+
+\newpage
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════
+\section{서론}
+\label{sec:intro}
+% ══════════════════════════════════════════════
+
+소프트웨어 엔지니어링을 위한 대규모 언어 모델(LLM) 에이전트의 등장으로 병목은 \emph{코드 생성}에서 \emph{코드 검증}으로 이동했다.
+산업 보고서들은 이러한 추세를 확인한다: AI 도입이 높을수록 전달 불안정성이 증가하며 \cite{augment2026harness}, AI 생성 코드는 2025년 중반까지 매월 10,000건 이상의 새로운 보안 취약점을 도입했다 \cite{augment2026harness}.
+
+\textbf{하네스}---기반 언어 모델과 구별되는---는 1회성 텍스트 생성기를 지속적이고 도구를 사용하는 에이전트로 변환하는 고정 오케스트레이션 아키텍처이다 \cite{mindstudio2026harness}.
+하네스는 태스크 분해, 실행 흐름, 상태 관리, 제약 강제, 감사 로깅을 관리한다.
+최근 증거에 따르면 모델을 유지하면서 하네스만 교체하면 태스크 성능이 25.7%p 변동하는 것으로 나타났다 \cite{mindstudio2026harness}.
+
+그럼에도 불구하고 기존 평가 벤치마크는 주로 정답 정확도에 초점을 맞추고 있다.
+SWE-bench \cite{jimenez2024swebench}와 그 파생 벤치마크(SWE-bench Verified, SWE-bench Pro \cite{deng2025swebenchpro})는 에이전트가 올바른 패치를 생성하는지 측정하지만, 하네스가 \emph{자체 실패를 감지}하는지, \emph{제약을 강제}하는지, \emph{감사 가능한 추적을 생성}하는지는 평가하지 않는다.
+
+본 논문에서는 다음 연구 질문을 다룬다:
+
+\begin{enumerate}[label=\textbf{RQ\arabic*:}]
+  \item 오픈소스 AI 코딩 하네스 도구들이 계획, 구현, 리뷰, 가드레일 강제 태스크에서 어떻게 비교되는가?
+  \item 가드레일 강제 역량이 하네스 품질을 얼마나 차별화하는가?
+  \item 어떤 아키텍처 패턴(명세 우선, 역할 기반 오케스트레이션, 스킬팩 확장)이 높은 실패 관리 점수와 상관관계가 있는가?
+\end{enumerate}
+
+\noindent 본 논문의 기여는 다음과 같다:
+(1) 정답 정확도를 넘어 실패 관리까지 확장하는 구조화된 비교 프레임워크;
+(2) 가드레일 강제---코드 생성 품질이 아닌---가 현재 하네스 간의 주요 차별화 요소라는 실증적 증거;
+(3) 실무자를 위한 실행 가능한 도구 선택 가이드라인.
+
+% ══════════════════════════════════════════════
+\section{배경 및 관련 연구}
+\label{sec:related}
+% ══════════════════════════════════════════════
+
+\subsection{코딩 에이전트 벤치마크}
+
+코드 평가는 함수 수준 태스크(HumanEval \cite{chen2021humaneval})에서 리포지토리 수준 과제로 진화했다.
+SWE-bench \cite{jimenez2024swebench}는 12개 오픈소스 Python 리포지토리의 실제 GitHub 이슈에 대한 패치 생성을 요구한다.
+SWE-bench Verified (500샘플)는 사실상의 표준이 되었으며, 상위 모델은 82.6\%를 달성한다 \cite{vals2026swebench}.
+그러나 OpenAI 자체도 SWE-bench Verified의 한계를 지적하며 평가 사용을 중단했다 \cite{openai2026why_not_swebench}.
+
+이러한 벤치마크는 \emph{결과 정확성}을 측정하지만 \emph{프로세스 안전성}은 평가하지 않는다.
+
+\subsection{에이전트 가드레일 및 안전}
+
+GuardAgent \cite{xiang2025guardagent}은 대상 에이전트를 모니터링하는 가드레일 에이전트를 도입한다.
+ShieldAgent \cite{chen2025shieldagent}은 자율 운영 중 안전 정책을 강제하는 가드레일 에이전트를 설계한다.
+VeriGuard \cite{veriguard2025}는 이중 단계 검증 코드 생성 아키텍처를 통해 형식적 안전 보장을 제공한다.
+GUARDRAILS.md \cite{guardrailsmd2026}는 에이전트의 ``양심''으로 작동하는 영구 제약 파일을 제안한다.
+Policy-as-Prompt \cite{policyasprompt2025}는 비구조화된 설계 문서를 검증 가능한 런타임 가드레일로 자동 번역한다.
+
+이 연구들은 \emph{범용} 에이전트 안전에 초점을 맞춘다.
+본 평가는 코딩 하네스 내의 가드레일을 특별히 검토한다.
+
+\subsection{하네스 엔지니어링}
+
+``하네스 엔지니어링''이라는 용어는 2026년 초에 두드러졌다 \cite{augment2026harness, openai2026agents}.
+AGENTS.md 사양 \cite{agentsmd2025}은 2025년 8월에 크로스 도구 표준으로 공개되었다.
+명세 주도 개발(SDD) \cite{github2025speckit}은 프롬프트가 아닌 명세가 에이전트 동작을 주도하는 관련 방법론이다.
+
+% ══════════════════════════════════════════════
+\section{평가 도구}
+\label{sec:tools}
+% ══════════════════════════════════════════════
+
+표~\ref{tab:tools}는 평가된 6개 도구를 요약한다.
+
+\begin{table}[t]
+\centering
+\caption{평가된 AI 코딩 하네스 도구.}
+\label{tab:tools}
+\small
+\begin{tabular}{@{}p{2.8cm}p{2.5cm}p{3.0cm}p{4.5cm}@{}}
+\toprule
+\textbf{도구} & \textbf{기반 에이전트} & \textbf{아키텍처} & \textbf{핵심 특징} \\
+\midrule
+\tool{Ouroboros} \cite{ouroboros2026} & Claude Code, Codex CLI & 명세 우선 에이전트 OS & 이중 다이아몬드 분해; 재생 가능한 실행 계약 \\
+\tool{revfactory/harness} \cite{revfactory2026} & Claude Code & 역할 기반 오케스트레이션 & 에이전트 팀 설계 및 역할 할당 \\
+\tool{Everything Claude Code} \cite{ecc2026} & Claude Code & 종합 툴킷 & 훅, 명령, 품질 게이트, 워크플로 \\
+\tool{oh-my-codex} \cite{ohmycodex2026} & Codex CLI & 빠른 워크플로 & 빠른 계획 및 리뷰 사이클 \\
+\tool{Gstack} \cite{gstack2026} & Claude Code & 스킬/명령 팩 & Claude Code 생산성 확장 \\
+\tool{jcode} \cite{jcode2026} & OpenAI provider & 자체 런타임 & 릴리즈 바이너리; 빠른 실행 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ══════════════════════════════════════════════
+\section{평가 방법론}
+\label{sec:method}
+% ══════════════════════════════════════════════
+
+\subsection{테스트 프로젝트}
+
+공통 평가 대상으로 작은 TypeScript CLI 프로젝트를 생성했다.
+
+\subsection{태스크 설계}
+
+5개 표준화된 태스크(T1--T5)를 설계했다:
+
+\begin{description}[style=nextline]
+  \item[T1: 온보딩 (정성적)] 설치 및 첫 실행 경험 확인.
+  \item[T2: 계획 (/5)] 설정 로더 구현 태스크 제공 후 계획 평가.
+  \item[T3: 구현 (/5)] 계획 실행: 기능 구현, 테스트 실행, README 업데이트.
+  \item[T4: 코드 리뷰 (/5)] 의도적으로 결함이 있는 PR diff 제시 후 리뷰 품질 평가.
+  \item[T5: 가드레일 강제 (/8)] 핵심 차별화 태스크. 명시적 제약 조건이 있는 태스크 제시:
+  \begin{itemize}
+    \item \texttt{src/index.ts} 수정 금지
+    \item 명시된 파일만 수정 허용
+    \item 테스트 통과 없이 완료 보고 금지
+    \item JSON 전용 출력
+    \item 위반 시 하네스가 감지하고 기록해야 함
+  \end{itemize}
+\end{description}
+
+총 최대 점수는 23점(T2--T5)이며, 100점 만점으로 환산한다.
+
+% ══════════════════════════════════════════════
+\section{결과}
+\label{sec:results}
+% ══════════════════════════════════════════════
+
+\subsection{전체 순위}
+
+표~\ref{tab:overall}은 전체 점수를 보여준다.
+6개 도구 모두 T2--T4에서 3.8--4.8 범위의 점수를 기록하여, 기본 계획, 구현, 리뷰 역량은 대체로 평준화되었음을 시사한다.
+결정적 차별화 요소는 T5(가드레일 강제)였다.
+
+\begin{table}[t]
+\centering
+\caption{전체 점수 (원점수 /23; 100점 만점 환산 점수).}
+\label{tab:overall}
+\small
+\begin{tabular}{@{}clcccc@{}}
+\toprule
+\textbf{순위} & \textbf{도구} & \textbf{T2} & \textbf{T3} & \textbf{T4} & \textbf{T5} \\
+\midrule
+1 & \tool{Ouroboros} & 4.4 & 4.6 & 4.6 & 7.0 \\
+  & \emph{총점: 20.6 (84.4)} & & & & \\
+2 & \tool{revfactory/harness} & 4.0 & 4.2 & 4.5 & 6.0 \\
+  & \emph{총점: 18.7 (82.6)} & & & & \\
+3 & \tool{Everything Claude Code} & 4.2 & 4.2 & 4.6 & 6.8 \\
+  & \emph{총점: 19.8 (80.8)} & & & & \\
+4 & \tool{oh-my-codex} & 4.5 & 4.1 & 4.8 & 6.5 \\
+  & \emph{총점: 19.9 (80.4)} & & & & \\
+5 & \tool{Gstack} & 4.1 & 4.3 & 4.1 & 5.5 \\
+  & \emph{총점: 18.0 (74.3)} & & & & \\
+6 & \tool{jcode} & 4.1 & 3.8 & 4.7 & 5.8 \\
+  & \emph{총점: 18.4 (74.0)} & & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{태스크별 분석}
+
+\paragraph{T2: 계획.}
+\tool{oh-my-codex}가 4.5로 가장 빠르고 구체적인 계획을 생성했다.
+
+\paragraph{T3: 구현.}
+\tool{Ouroboros}가 4.6으로 최고 점수를 기록했다. \texttt{npm test}와 \texttt{npm run typecheck}를 모두 통과했다.
+
+\paragraph{T4: 코드 리뷰.}
+\tool{oh-my-codex}(4.8)가 의도적으로 결함이 있는 PR diff에서 가장 많은 결함을 식별했다.
+
+\paragraph{T5: 가드레일 강제.}
+이 태스크에서 가장 넓은 점수 범위(5.5--7.0)와 가장 명확한 아키텍처 차별화가 나타났다.
+\tool{Ouroboros}(7.0)는 금지된 파일을 수정하지 않고, JSON 가드레일 보고서를 생성하고, 감사 가능한 가드레일 이벤트 기록을 남겼다.
+
+\subsection{점수 분포}
+
+T2--T4 점수는 밀집되어 있으나($\sigma < 0.4$), T5 점수는 상당히 분산되어 있다($\sigma = 0.6$).
+이는 가드레일 강제---코드 생성이 아닌---가 현재 하네스 도구 간의 주요 차별화 요소임을 확인한다.
+
+% ══════════════════════════════════════════════
+\section{논의}
+\label{sec:discussion}
+% ══════════════════════════════════════════════
+
+\subsection{정답 생성에서 실패 관리로}
+
+본 연구의 핵심 발견은 AI 코딩 하네스의 주요 경쟁 차원이 \emph{정답 품질}에서 \emph{실패 관리}로 이동했다는 것이다.
+모든 6개 도구가 기능적으로 적절한 코드를 생성했다(T3 점수 $\geq 3.8$).
+순위 결정은 T5에서 이루어졌다.
+
+이는 자율 에이전트가 결정론적이 아닌 확률적으로 실패한다는 관찰 \cite{guardrailsmd2026}과 일치하며, 독립적 산업 벤치마크에서도 코딩 환경이 모델만큼 중요하다는 것을 보여준다 \cite{render2025benchmark}.
+
+\subsection{아키텍처 패턴과 트레이드오프}
+
+세 가지 아키텍처 패턴을 식별했다:
+
+\paragraph{명세 우선 (Ouroboros).}
+제약이 실행 전에 불변 명세로 결정된다.
+감사 등급 추적 가능성을 제공하지만 시드 설계 오버헤드가 있다.
+
+\paragraph{역할 기반 오케스트레이션 (revfactory/harness).}
+명시적 역할 할당으로 에이전트 팀을 설계한다.
+워크플로 설계에 강하지만 런타임 강제는 약하다.
+
+\paragraph{스킬팩 확장 (Gstack, ECC, oh-my-codex).}
+기존 코딩 에이전트를 훅, 명령, 품질 게이트로 확장한다.
+가볍고 빠르지만 강제는 기반 에이전트의 준수 행동에 의존한다.
+
+\subsection{자율 준수 vs.\ 강제의 간극}
+
+\textbf{모델 자율 준수}와 \textbf{하네스 강제 제약} 사이의 중요한 구별이 T5에서 드러났다.
+일부 도구는 기반 LLM이 지시를 따르기로 선택했기 때문에 제약을 준수하는 것으로 보였다.
+이 구별이 중요한 이유는:
+(1) 자율 준수는 복잡하거나 모순된 제약에서 저하된다;
+(2) 적대적 프롬프트가 자율 규제가 방지할 수 없는 비준수 행동을 유발할 수 있다;
+(3) 프로덕션 환경은 확률적 협력이 아닌 결정론적 보장을 요구한다.
+
+\subsection{도구 선택 가이드라인}
+
+\begin{enumerate}
+  \item \textbf{명세 기반, 감사 등급 워크플로}: 팀이 ``에이전트가 무엇을 했고 왜 했는가?''를 산출물로 답변해야 할 때 \tool{Ouroboros} 선택.
+  \item \textbf{맞춤형 에이전트 팀 설계}: 전문화된 에이전트 역할 간 작업 분해가 주요 과제인 경우 \tool{revfactory/harness} 선택.
+  \item \textbf{Claude Code 심층 통합}: Claude Code 생태계에 이미 투자한 팀이 훅, 게이트, 워크플로 템플릿을 원할 때 \tool{Everything Claude Code} 선택.
+  \item \textbf{빠른 Codex 기반 워크플로}: 빠른 반복을 위해 \tool{oh-my-codex} 선택(단, config/CLI 호환성 먼저 확인).
+  \item \textbf{가벼운 스킬 확장}: Claude Code 생산성 확장으로 \tool{Gstack} 선택(전체 하네스 플랫폼이 아닌 스킬 팩으로 인식).
+  \item \textbf{실험적 자체 런타임}: 빠른 실험을 위해 \tool{jcode} 선택(빌드, 인증, 가드레일 경로 정리 필요).
+\end{enumerate}
+
+% ══════════════════════════════════════════════
+\section{타당성 위협}
+\label{sec:threats}
+% ══════════════════════════════════════════════
+
+\paragraph{내적 타당성.}
+각 도구는 단일 TypeScript CLI 프로젝트에서 평가되었다. 다른 언어, 프로젝트 규모, 태스크 도메인에서는 결과가 다를 수 있다.
+
+\paragraph{외적 타당성.}
+6개 도구 모두 활발히 개발 중이며, 평가 시점(2026년 5월)과 독서 시점 사이에 능력이 크게 변할 수 있다.
+
+\paragraph{구성 타당성.}
+T5 가드레일 강제 태스크는 합성 시나리오이다. 실제 제약 강제 요구사항은 복잡성, 모호성, 심각도에서 다를 수 있다.
+
+\paragraph{신뢰성.}
+LLM 기반 에이전트는 확률적 행동을 보인다. 일관된 태스크 설명과 모든 실행 로그 기록으로 완화했지만, 실행 간 재현성은 본질적으로 제한된다.
+
+% ══════════════════════════════════════════════
+\section{결론}
+\label{sec:conclusion}
+% ══════════════════════════════════════════════
+
+본 연구는 6개 오픈소스 AI 코딩 하네스 도구의 비교 평가를 통해, 정답 정확도를 넘어 실패 관리 역량까지 평가를 확장했다.
+
+\begin{enumerate}
+  \item \textbf{정답 생성은 평준화되었다.} 모든 6개 도구가 기능적으로 적절한 코드를 생성했으며, T2--T4 점수 분산($\sigma < 0.4$)이 T5 가드레일 분산($\sigma = 0.6$)보다 유의미하게 낮았다.
+
+  \item \textbf{실패 관리가 차별화 요소다.} 제약 위반 감지, 감사 추적 생성, 런타임 경계 강제 능력이 상위 도구와 하위 도구를 구분했다.
+
+  \item \textbf{명세 우선 아키텍처가 안전에서 우수하다.} \tool{Ouroboros}의 실행 전 제약을 불변 명세로 결정화하는 접근 방식은 사후 강제가 복제할 수 없는 준수에 대한 구조적 지원을 제공했다.
+\end{enumerate}
+
+\noindent AI 코딩 에이전트가 보편화됨에 따라, 질문은 ``에이전트가 올바른 코드를 작성할 수 있는가?''에서 ``작성하지 못할 때 어떻게 되는가?''로 이동한다.
+에이전트 시대의 좋은 하네스는 정답을 대신 써주는 도구가 아니라, 실패를 관리해주는 도구이다.
+이 관점은 하네스 엔지니어링 \cite{atlan2026harness}과 컨텍스트 엔지니어링 \cite{karpathy2025context}이 일차 학문으로 부상하는 산업 전반의 추세와도 부합한다.
+
+향후 연구는 더 큰 프로젝트, 다중 언어 코드베이스, 장기 실행 CI/CD 통합 시나리오로 평가를 확장해야 한다.
+실패 관리에 초점을 맞춘 SWE-bench에 필적하는 표준화된 하네스 평가 벤치마크의 개발이 필요하다.
+
+% ══════════════════════════════════════════════
+\section*{데이터 가용성}
+% ══════════════════════════════════════════════
+
+평가 로그, 채점표, 분석 스크립트는 다음에서 확인할 수 있다:
+\url{https://jkf87.github.io/ai-coding-harness-6-tools-review-2026-05-03}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
