@@ -18,6 +18,8 @@
 \usepackage{amsmath}
 \usepackage{fancyhdr}
 \usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{patterns,calc,positioning,arrows.meta,shapes.geometric,decorations.pathreplacing}
 
 \hypersetup{
   colorlinks=true,
@@ -292,25 +294,132 @@ Its strength lay in workflow \emph{design} rather than runtime \emph{enforcement
 
 \tool{Gstack} (5.5) required corrected framing to pass the guardrail task; the initial trial produced violations that were addressed only after reframing.
 
-\subsection{Score Distribution}
+\subsection{Overall Score Comparison}
 
-Figure~\ref{fig:radar} illustrates the score distribution across tasks.
-The key observation is that T2--T4 scores cluster tightly (standard deviation $\sigma < 0.4$), while T5 scores spread significantly ($\sigma = 0.6$).
-This confirms that guardrail enforcement---not code generation---is the primary differentiator among current harness tools.
+Figure~\ref{fig:overall-bar} presents the normalized 100-point scores across all six tools.
+The visual representation makes clear that the gap between tools is modest for T2--T4 but widens substantially for T5, confirming that guardrail enforcement is the primary ranking differentiator.
 
 \begin{figure}[t]
 \centering
-\begin{tabular}{@{}lcc@{}}
-\toprule
-\textbf{Task} & \textbf{Mean} & \textbf{$\sigma$} \\
-\midrule
-T2: Planning & 4.22 & 0.18 \\
-T3: Implementation & 4.20 & 0.28 \\
-T4: Review & 4.55 & 0.25 \\
-T5: Guardrail & 6.27 & 0.56 \\
-\bottomrule
-\end{tabular}
-\caption{Score statistics across six tools. T5 exhibits the highest variance, confirming its role as the primary differentiator.}
+\begin{tikzpicture}[
+  bar/.style={draw,fill=#1,minimum height=0.35cm,anchor=west,font=\footnotesize},
+  lbl/.style={font=\footnotesize,anchor=east},
+  scorelbl/.style={font=\scriptsize,anchor=west}
+]
+% Data: Ouroboros 84.4, revfactory 82.6, ECC 80.8, ohmycodex 80.4, Gstack 74.3, jcode 74.0
+\def\maxw{8.0}
+
+% Bars
+\node[lbl] at (-0.1, 5.4) {Ouroboros};
+\node[bar=blue!55,minimum width=\maxw*0.844 cm] at (0,5.4) {};
+\node[scorelbl] at (\maxw*0.844+0.1, 5.4) {84.4};
+
+\node[lbl] at (-0.1, 4.4) {revfactory};
+\node[bar=blue!45,minimum width=\maxw*0.826 cm] at (0,4.4) {};
+\node[scorelbl] at (\maxw*0.826+0.1, 4.4) {82.6};
+
+\node[lbl] at (-0.1, 3.4) {ECC};
+\node[bar=blue!38,minimum width=\maxw*0.808 cm] at (0,3.4) {};
+\node[scorelbl] at (\maxw*0.808+0.1, 3.4) {80.8};
+
+\node[lbl] at (-0.1, 2.4) {oh-my-codex};
+\node[bar=teal!50,minimum width=\maxw*0.804 cm] at (0,2.4) {};
+\node[scorelbl] at (\maxw*0.804+0.1, 2.4) {80.4};
+
+\node[lbl] at (-0.1, 1.4) {Gstack};
+\node[bar=orange!45,minimum width=\maxw*0.743 cm] at (0,1.4) {};
+\node[scorelbl] at (\maxw*0.743+0.1, 1.4) {74.3};
+
+\node[lbl] at (-0.1, 0.4) {jcode};
+\node[bar=orange!35,minimum width=\maxw*0.740 cm] at (0,0.4) {};
+\node[scorelbl] at (\maxw*0.740+0.1, 0.4) {74.0};
+
+% Axis
+\draw[->] (0,-0.2) -- (\maxw+1.2,-0.2) node[right] {\footnotesize Score};
+\foreach \x/\v in {0/0, 1.6/20, 3.2/40, 4.8/60, 6.4/80, 8.0/100} {
+  \draw (\x,-0.2) -- (\x,-0.4) node[below,font=\scriptsize] {\v};
+}
+
+\end{tikzpicture}
+\caption{Normalized 100-point overall scores. The top four tools (blue/teal) form a cluster above 80, while the bottom two (orange) score below 75, driven primarily by T5 guardrail performance.}
+\label{fig:overall-bar}
+\end{figure}
+
+\subsection{Task-Level Score Distribution}
+
+Figure~\ref{fig:radar} shows the per-task score distribution across tools as a grouped bar chart.
+T2--T4 scores cluster tightly (standard deviation $\sigma < 0.4$), while T5 scores spread significantly ($\sigma = 0.6$).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  bar/.style={draw,fill=#1,minimum width=0.18cm,anchor=south,font=\tiny},
+]
+\def\gp{1.3}  % group spacing
+\def\bw{0.18} % bar width
+
+% Group positions (center)
+% Tools: O=0, r=1.3, E=2.6, o=3.9, G=5.2, j=6.5
+% Tasks: T2 T3 T4 T5 per tool
+
+% Ouroboros
+\foreach \t/\v/\c/\x in {T2/4.4/blue!30/0, T3/4.6/blue!45/0.24, T4/4.6/blue!60/0.48, T5/7.0/red!50/0.72} {
+  \node[bar=\c,minimum height=\v*0.7cm] at (\x,0) {};
+}
+\node[font=\scriptsize,anchor=north] at (0.36,-0.1) {Ouro.};
+
+% revfactory
+\foreach \t/\v/\c/\x in {T2/4.0/teal!30/\gp, T3/4.2/teal!45/\gp+0.24, T4/4.5/teal!60/\gp+0.48, T5/6.0/red!50/\gp+0.72} {
+  \node[bar=\c,minimum height=\v*0.7cm] at (\x,0) {};
+}
+\node[font=\scriptsize,anchor=north] at (\gp+0.36,-0.1) {revfac.};
+
+% ECC
+\def\ex{2.6}
+\foreach \v/\c/\x in {4.2/blue!30/\ex, 4.2/blue!45/2.84, 4.6/blue!60/3.08, 6.8/red!50/3.32} {
+  \node[bar=\c,minimum height=\v*0.7cm] at (\x,0) {};
+}
+\node[font=\scriptsize,anchor=north] at (\ex+0.36,-0.1) {ECC};
+
+% oh-my-codex
+\def\ox{3.9}
+\foreach \v/\c/\x in {4.5/teal!30/\ox, 4.1/teal!45/4.14, 4.8/teal!60/4.38, 6.5/red!50/4.62} {
+  \node[bar=\c,minimum height=\v*0.7cm] at (\x,0) {};
+}
+\node[font=\scriptsize,anchor=north] at (\ox+0.36,-0.1) {oh-my-cx};
+
+% Gstack
+\def\gx{5.2}
+\foreach \v/\c/\x in {4.1/blue!30/\gx, 4.3/blue!45/5.44, 4.1/blue!60/5.68, 5.5/red!50/5.92} {
+  \node[bar=\c,minimum height=\v*0.7cm] at (\x,0) {};
+}
+\node[font=\scriptsize,anchor=north] at (\gx+0.36,-0.1) {Gstack};
+
+% jcode
+\def\jx{6.5}
+\foreach \v/\c/\x in {4.1/blue!30/\jx, 3.8/blue!45/6.74, 4.7/blue!60/6.98, 5.8/red!50/7.22} {
+  \node[bar=\c,minimum height=\v*0.7cm] at (\x,0) {};
+}
+\node[font=\scriptsize,anchor=north] at (\jx+0.36,-0.1) {jcode};
+
+% Y axis
+\draw[->] (-0.2,0) -- (-0.2,6.0) node[above,font=\footnotesize] {Score};
+\foreach \y/\v in {0/0, 1.4/2, 2.8/4, 4.2/6} {
+  \draw (-0.2,\y) -- (-0.35,\y) node[left,font=\scriptsize] {\v};
+}
+
+% Legend
+\node[draw,fill=blue!30,minimum size=0.25cm] at (1.0,5.8) {};
+\node[font=\scriptsize,anchor=west] at (1.2,5.8) {T2 Plan};
+\node[draw,fill=blue!45,minimum size=0.25cm] at (2.5,5.8) {};
+\node[font=\scriptsize,anchor=west] at (2.7,5.8) {T3 Work};
+\node[draw,fill=blue!60,minimum size=0.25cm] at (4.0,5.8) {};
+\node[font=\scriptsize,anchor=west] at (4.2,5.8) {T4 Review};
+\node[draw,fill=red!50,minimum size=0.25cm] at (5.5,5.8) {};
+\node[font=\scriptsize,anchor=west] at (5.7,5.8) {T5 Guard};
+
+\end{tikzpicture}
+\caption{Per-task scores by tool. Blue/teal bars (T2--T4) cluster tightly across tools; red bars (T5 Guardrail) show the widest spread, confirming guardrail enforcement as the primary differentiator.}
 \label{fig:radar}
 \end{figure}
 
@@ -330,12 +439,59 @@ A harness that produces brilliant code 95\% of the time but silently violates co
 
 \subsection{Architectural Patterns and Their Trade-offs}
 
-We identified three architectural patterns among the evaluated tools:
+We identified three architectural patterns among the evaluated tools (Figure~\ref{fig:arch}):
 
 \paragraph{Specification-first (Ouroboros).}
 Constraints are crystallized into immutable specifications before execution.
 This provides structural support for compliance but introduces overhead in seed design and increases execution time.
 Best suited for teams requiring audit-grade traceability.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  box/.style={draw,rounded corners=3pt,minimum width=2.8cm,minimum height=1.0cm,align=center,font=\footnotesize},
+  arr/.style={-{Stealth[length=2.5mm]},thick},
+  lbl/.style={font=\scriptsize\bfseries,fill=white,inner sep=2pt}
+]
+% Pattern A: Spec-first
+\node[box,fill=blue!15] (spec) at (0,3.0) {Immutable Spec};
+\node[box,fill=blue!8] (decomp) at (0,1.5) {Double Diamond Decomposition};
+\node[box,fill=blue!8] (exec) at (0,0.0) {Execution + Audit Log};
+\node[box,fill=red!10] (guard) at (0,-1.5) {Guardrail Event Record};
+\draw[arr] (spec) -- (decomp);
+\draw[arr] (decomp) -- (exec);
+\draw[arr] (exec) -- (guard);
+\node[lbl] at (-2.0,1.5) {Spec-first};
+\node[font=\scriptsize,text=gray] at (0,-2.3) {Ouroboros};
+
+% Pattern B: Role-based
+\node[box,fill=teal!15] (planner) at (5.5,3.0) {Planner Agent};
+\node[box,fill=teal!8] (impl) at (4.2,1.5) {Implementer Agent};
+\node[box,fill=teal!8] (rev) at (6.8,1.5) {Reviewer Agent};
+\node[box,fill=orange!10] (harness) at (5.5,0.0) {Harness Orchestrator};
+\draw[arr] (planner) -- (impl);
+\draw[arr] (planner) -- (rev);
+\draw[arr] (impl) -- (harness);
+\draw[arr] (rev) -- (harness);
+\node[lbl] at (3.5,3.0) {Role-based};
+\node[font=\scriptsize,text=gray] at (5.5,-1.0) {revfactory/harness};
+
+% Pattern C: Skill-pack
+\node[box,fill=violet!15] (base) at (11.0,3.0) {Base Agent (Claude/Codex)};
+\node[box,fill=violet!8] (hooks) at (9.7,1.5) {Hooks + Commands};
+\node[box,fill=violet!8] (gates) at (12.3,1.5) {Quality Gates};
+\node[box,fill=violet!8] (wf) at (11.0,0.0) {Workflow Templates};
+\draw[arr] (base) -- (hooks);
+\draw[arr] (base) -- (gates);
+\draw[arr] (hooks) -- (wf);
+\draw[arr] (gates) -- (wf);
+\node[lbl] at (8.8,3.0) {Skill-pack};
+\node[font=\scriptsize,text=gray] at (11.0,-1.0) {ECC / Gstack / oh-my-codex};
+
+\end{tikzpicture}
+\caption{Three architectural patterns identified among evaluated harness tools. (a)~Spec-first: constraints are crystallized into immutable specifications before execution, providing audit-grade traceability. (b)~Role-based: work is decomposed across specialized agent roles with explicit responsibilities. (c)~Skill-pack: existing agents are extended with hooks, commands, and quality gates.}
+\label{fig:arch}
+\end{figure}
 
 \paragraph{Role-based orchestration (revfactory/harness).}
 Agent teams are designed with explicit role assignments and responsibility boundaries.
